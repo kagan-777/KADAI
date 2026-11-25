@@ -1,0 +1,7 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Run kadai API", "type": "node", "request": "launch", "program": "${workspaceFolder}/src/server.js", "envFile": "${workspaceFolder}/.env", "console": "integratedTerminal" },
+    { "name": "Run smoke test", "type": "node", "request": "launch", "program": "${workspaceFolder}/test/smoke.js", "console": "integratedTerminal" }
+  ]
+}

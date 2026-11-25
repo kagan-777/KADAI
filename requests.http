@@ -1,0 +1,61 @@
+# Install the "REST Client" extension, then click "Send Request" above any request.
+@base = http://localhost:8000/api/v1
+
+### 1. Login as admin (role must match the account)
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "admin", "password": "kadai123", "role": "admin" }
+
+### Token from the login above
+@token = {{login.response.body.token}}
+
+### Wrong role for this account -> 403 ROLE_MISMATCH
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "admin", "password": "kadai123", "role": "salesman" }
+
+### Items
+GET {{base}}/items
+Authorization: Bearer {{token}}
+
+### Stock balances (derived from the ledger)
+GET {{base}}/stock/balances
+Authorization: Bearer {{token}}
+
+### Orders
+GET {{base}}/orders
+Authorization: Bearer {{token}}
+
+### Stock check, approve, invoice, dispatch (replace 1 with your ids)
+GET {{base}}/orders/1/stock-check
+Authorization: Bearer {{token}}
+
+###
+POST {{base}}/orders/1/approve
+Authorization: Bearer {{token}}
+
+###
+POST {{base}}/orders/1/invoice
+Authorization: Bearer {{token}}
+
+###
+POST {{base}}/invoices/1/dispatch
+Authorization: Bearer {{token}}
+
+### Invoice PDF
+GET {{base}}/invoices/1/pdf
+Authorization: Bearer {{token}}
+
+### Record payment of Rs 4,000 against invoice 1
+POST {{base}}/payments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "customer_id": 1, "amount_paise": 400000, "mode": "upi", "allocations": [{ "invoice_id": 1, "amount_paise": 400000 }] }
+
+### Reports (json or csv)
+GET {{base}}/reports/gst-summary?from=2026-11-01&to=2026-11-30&format=csv
+Authorization: Bearer {{token}}

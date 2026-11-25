@@ -1,0 +1,1802 @@
+openapi: 3.0.3
+info:
+  title: kadai Order-to-Audit API
+  version: 1.0.0
+  description: 'Every endpoint lists allowed roles in x-roles. The server enforces them; the UI only hides menus. Money is
+    integer paise. Errors: 400 validation, 401, 403 (ROLE_MISMATCH / FORBIDDEN), 404, 409 (INSUFFICIENT_STOCK, ALREADY_POSTED),
+    422.'
+servers:
+- url: http://localhost:8000/api/v1
+security:
+- bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    E:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  parameters:
+    From:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date
+    Format:
+      name: format
+      in: query
+      schema:
+        type: string
+        enum:
+        - json
+        - csv
+        - xlsx
+        - pdf
+        default: json
+  schemas:
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code: &id001
+          type: string
+        message: *id001
+        details:
+          type: object
+    LoginRequest:
+      type: object
+      required:
+      - username
+      - password
+      - role
+      properties:
+        username: *id001
+        password: *id001
+        role:
+          type: string
+          enum:
+          - salesman
+          - admin
+          - production
+          - auditor
+          - owner
+          description: Must equal the account's role or login fails with 403 ROLE_MISMATCH
+    LoginResponse:
+      type: object
+      properties:
+        token: *id001
+        user:
+          $ref: '#/components/schemas/User'
+    User:
+      type: object
+      properties:
+        id: &id002
+          type: integer
+        username: *id001
+        full_name: *id001
+        role: *id001
+        screens:
+          type: array
+          items: *id001
+    CustomerInput:
+      type: object
+      required:
+      - name
+      - kind
+      - state_code
+      properties:
+        name: *id001
+        kind:
+          type: string
+          enum:
+          - retailer
+          - distributor
+        gstin: *id001
+        address: *id001
+        state_code: *id001
+        credit_days: *id002
+        salesman_id: *id002
+    Customer:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        kind: *id001
+        gstin: *id001
+        state_code: *id001
+        credit_days: *id002
+        salesman_id: *id002
+    CustomerList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Customer'
+    PriceList:
+      type: array
+      items:
+        type: object
+        properties:
+          item_id: *id002
+          rate_paise: &id003
+            type: integer
+            description: Paise (integer). 787500 = ₹7,875.00
+    Outstanding:
+      type: object
+      properties:
+        customer_id: *id002
+        total_paise: *id003
+        ageing:
+          type: object
+          properties:
+            not_due: *id003
+            d1_30: *id003
+            d31_60: *id003
+            d60_plus: *id003
+        invoices:
+          type: array
+          items:
+            type: object
+            properties:
+              invoice_no: *id001
+              outstanding_paise: *id003
+              due_date: &id006
+                type: string
+                format: date
+    ItemInput:
+      type: object
+      required:
+      - sku
+      - name
+      - type
+      - base_unit
+      properties:
+        sku: *id001
+        name: *id001
+        type:
+          type: string
+          enum:
+          - raw
+          - packaging
+          - finished
+        base_unit: *id001
+        hsn: *id001
+        gst_rate_bp: *id002
+        sell_price_paise: *id003
+        reorder_level: &id005
+          type: number
+    Item:
+      type: object
+      properties:
+        id: *id002
+        sku: *id001
+        name: *id001
+        type: *id001
+        base_unit: *id001
+        hsn: *id001
+        gst_rate_bp: *id002
+        sell_price_paise: *id003
+    ItemList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Item'
+    SupplierInput:
+      type: object
+      required:
+      - name
+      properties:
+        name: *id001
+        gstin: *id001
+        phone: *id001
+    Supplier:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        gstin: *id001
+    SupplierList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Supplier'
+    BomInput:
+      type: object
+      required:
+      - product_id
+      - yield_qty
+      - lines
+      properties:
+        product_id: *id002
+        yield_qty: &id004
+          type: number
+          description: Base unit of the item (kg, l, pc, pkt); API accepts an optional unit and converts
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - qty
+            properties:
+              item_id: *id002
+              qty: *id004
+              unit:
+                type: string
+    Bom:
+      type: object
+      properties:
+        id: *id002
+        product_id: *id002
+        version: *id002
+        yield_qty: *id004
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id: *id002
+              qty: *id004
+    BomList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Bom'
+    OrderInput:
+      type: object
+      required:
+      - customer_id
+      - lines
+      properties:
+        client_uuid:
+          type: string
+          format: uuid
+        customer_id: *id002
+        notes: *id001
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - qty
+            properties:
+              item_id: *id002
+              qty: *id005
+    OrderEdit:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id: *id002
+              qty: *id005
+              rate_paise: *id003
+    RejectInput:
+      type: object
+      required:
+      - reason
+      properties:
+        reason: *id001
+    Order:
+      type: object
+      properties:
+        id: *id002
+        order_no: *id001
+        customer_id: *id002
+        status:
+          type: string
+          enum:
+          - submitted
+          - approved
+          - rejected
+          - invoiced
+          - dispatched
+          - cancelled
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id: *id002
+              qty: *id005
+              rate_paise: *id003
+        total_paise: *id003
+    OrderList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Order'
+    StockCheck:
+      type: array
+      items:
+        type: object
+        properties:
+          item_id: *id002
+          ordered: *id005
+          available: *id005
+          shortage: *id005
+    Invoice:
+      type: object
+      properties:
+        id: *id002
+        invoice_no: *id001
+        invoice_date: *id006
+        customer_name: *id001
+        place_of_supply: *id001
+        is_interstate: &id007
+          type: boolean
+        taxable_paise: *id003
+        cgst_paise: *id003
+        sgst_paise: *id003
+        igst_paise: *id003
+        total_paise: *id003
+        status: *id001
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              description: *id001
+              hsn: *id001
+              qty: *id005
+              rate_paise: *id003
+              taxable_paise: *id003
+              gst_bp: *id002
+    InvoiceList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Invoice'
+    Pdf:
+      type: string
+      format: binary
+    Dispatch:
+      type: object
+      properties:
+        id: *id002
+        invoice_id: *id002
+        dispatched_on: *id006
+    CreditNote:
+      type: object
+      properties:
+        id: *id002
+        note_no: *id001
+        total_paise: *id003
+    PaymentInput:
+      type: object
+      required:
+      - customer_id
+      - amount_paise
+      - mode
+      - allocations
+      properties:
+        customer_id: *id002
+        amount_paise: *id003
+        mode:
+          type: string
+          enum:
+          - cash
+          - upi
+          - bank
+          - cheque
+        reference: *id001
+        allocations:
+          type: array
+          items:
+            type: object
+            required:
+            - invoice_id
+            - amount_paise
+            properties:
+              invoice_id: *id002
+              amount_paise: *id003
+    Payment:
+      type: object
+      properties:
+        id: *id002
+        customer_id: *id002
+        amount_paise: *id003
+        paid_on: *id006
+    PaymentList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Payment'
+    PurchaseInput:
+      type: object
+      required:
+      - supplier_id
+      - lines
+      properties:
+        supplier_id: *id002
+        bill_no: *id001
+        bill_date: *id006
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - qty
+            - unit_code
+            - rate_paise
+            properties:
+              item_id: *id002
+              qty: *id005
+              unit_code: *id001
+              rate_paise: *id003
+    Purchase:
+      type: object
+      properties:
+        id: *id002
+        status: *id001
+        supplier_id: *id002
+    PurchaseList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Purchase'
+    BalanceList:
+      type: array
+      items:
+        type: object
+        properties:
+          item_id: *id002
+          sku: *id001
+          name: *id001
+          type: *id001
+          qty: *id005
+          value_paise: *id003
+          avg_cost_paise: *id005
+    LedgerEntry:
+      type: object
+      properties:
+        id: *id002
+        move_date: *id006
+        item_id: *id002
+        move: *id001
+        qty_delta: *id005
+        value_delta: *id003
+        src_table: *id001
+        src_id: *id002
+        running_qty: *id005
+    LedgerList:
+      type: array
+      items:
+        $ref: '#/components/schemas/LedgerEntry'
+    AdjustInput:
+      type: object
+      required:
+      - item_id
+      - qty_delta
+      - reason
+      properties:
+        item_id: *id002
+        qty_delta: *id005
+        reason: *id001
+    RunInput:
+      type: object
+      required:
+      - bom_id
+      - batches
+      properties:
+        bom_id: *id002
+        batches: *id005
+        run_date: *id006
+        batch_no: *id001
+        expiry_date: *id006
+    RunActuals:
+      type: object
+      required:
+      - actual_output
+      - issues
+      properties:
+        actual_output: *id005
+        issues:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - actual_qty
+            properties:
+              item_id: *id002
+              actual_qty: *id005
+              unit:
+                type: string
+              wastage_qty: *id005
+    Run:
+      type: object
+      properties:
+        id: *id002
+        run_no: *id001
+        status: *id001
+        expected_output: *id005
+        actual_output: *id005
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id: *id002
+              planned_qty: *id005
+              actual_qty: *id005
+              wastage_qty: *id005
+              value_paise: *id003
+    RunList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Run'
+    OverheadInput:
+      type: object
+      required:
+      - kind
+      - amount_paise
+      properties:
+        kind:
+          type: string
+          enum:
+          - labour
+          - gas
+          - power
+          - other
+        amount_paise: *id003
+    VarianceList:
+      type: array
+      items:
+        type: object
+        properties:
+          name: *id001
+          planned_qty: *id005
+          actual_qty: *id005
+          variance_bp: *id002
+          flagged: *id007
+    Costing:
+      type: object
+      properties:
+        material_paise: *id003
+        overhead_paise: *id003
+        cost_per_unit_paise: *id005
+        sell_price_paise: *id003
+        margin_paise: *id005
+    Dashboard:
+      type: object
+      additionalProperties: true
+    Report:
+      type: object
+      description: Rows plus totals; csv/xlsx/pdf via format
+    AuditList:
+      type: array
+      items:
+        type: object
+        properties:
+          at: *id001
+          user_id: *id002
+          entity: *id001
+          entity_id: *id002
+          action: *id001
+          before:
+            type: object
+          after:
+            type: object
+paths:
+  /auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Sign in; role comes from the account, never from the client
+      x-roles:
+      - public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+  /auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Current user and allowed screens
+      x-roles:
+      - salesman
+      - admin
+      - production
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+  /customers:
+    get:
+      tags:
+      - Masters
+      summary: List customers (salesman sees own)
+      x-roles:
+      - salesman
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+    post:
+      tags:
+      - Masters
+      summary: Create customer
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+  /customers/{id}:
+    patch:
+      tags:
+      - Masters
+      summary: Update customer
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+  /customers/{id}/prices:
+    get:
+      tags:
+      - Masters
+      summary: Customer-specific prices
+      x-roles:
+      - salesman
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /customers/{id}/outstanding:
+    get:
+      tags:
+      - Sales
+      summary: Customer outstanding and ageing
+      x-roles:
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outstanding'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /items:
+    get:
+      tags:
+      - Masters
+      summary: List items (type filter)
+      x-roles:
+      - salesman
+      - admin
+      - production
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+    post:
+      tags:
+      - Masters
+      summary: Create item
+      x-roles:
+      - admin
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInput'
+  /items/{id}:
+    patch:
+      tags:
+      - Masters
+      summary: Update item
+      x-roles:
+      - admin
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInput'
+  /suppliers:
+    get:
+      tags:
+      - Masters
+      summary: List suppliers
+      x-roles:
+      - admin
+      - production
+      - auditor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+    post:
+      tags:
+      - Masters
+      summary: Create supplier
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+  /boms:
+    get:
+      tags:
+      - Production
+      summary: List BOMs
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BomList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+    post:
+      tags:
+      - Production
+      summary: Create BOM version
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bom'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BomInput'
+  /orders:
+    get:
+      tags:
+      - Sales
+      summary: List orders (salesman sees own)
+      x-roles:
+      - salesman
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+    post:
+      tags:
+      - Sales
+      summary: Submit order; client_uuid makes offline sync idempotent
+      x-roles:
+      - salesman
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+  /orders/{id}:
+    get:
+      tags:
+      - Sales
+      summary: Order detail
+      x-roles:
+      - salesman
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags:
+      - Sales
+      summary: Edit quantities or prices before approval
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderEdit'
+  /orders/{id}/stock-check:
+    get:
+      tags:
+      - Sales
+      summary: Finished-goods cover per line
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCheck'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /orders/{id}/approve:
+    post:
+      tags:
+      - Sales
+      summary: Approve order
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /orders/{id}/reject:
+    post:
+      tags:
+      - Sales
+      summary: Reject order with reason
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectInput'
+  /orders/{id}/invoice:
+    post:
+      tags:
+      - Sales
+      summary: Create GST invoice from approved order
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /invoices:
+    get:
+      tags:
+      - Sales
+      summary: List invoices
+      x-roles:
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+  /invoices/{id}:
+    get:
+      tags:
+      - Sales
+      summary: Invoice detail
+      x-roles:
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /invoices/{id}/pdf:
+    get:
+      tags:
+      - Sales
+      summary: Invoice PDF
+      x-roles:
+      - admin
+      - auditor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /invoices/{id}/dispatch:
+    post:
+      tags:
+      - Sales
+      summary: Record dispatch; stock goes down; 409 if short
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispatch'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /invoices/{id}/cancel:
+    post:
+      tags:
+      - Sales
+      summary: Cancel via credit note (never delete)
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditNote'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectInput'
+  /payments:
+    get:
+      tags:
+      - Sales
+      summary: List payments
+      x-roles:
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+    post:
+      tags:
+      - Sales
+      summary: Record payment and allocate to invoices
+      x-roles:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInput'
+  /purchases:
+    get:
+      tags:
+      - Inventory
+      summary: List purchases
+      x-roles:
+      - production
+      - admin
+      - auditor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+    post:
+      tags:
+      - Inventory
+      summary: Create purchase (draft)
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Purchase'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseInput'
+  /purchases/{id}/post:
+    post:
+      tags:
+      - Inventory
+      summary: Post purchase; raw stock goes up
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Purchase'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /stock/balances:
+    get:
+      tags:
+      - Inventory
+      summary: Balances by item and type
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+  /stock/ledger:
+    get:
+      tags:
+      - Inventory
+      summary: Ledger with running balance and source document
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+  /stock/adjustments:
+    post:
+      tags:
+      - Inventory
+      summary: Stock adjustment with reason
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerEntry'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustInput'
+  /production-runs:
+    get:
+      tags:
+      - Production
+      summary: List runs
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+    post:
+      tags:
+      - Production
+      summary: Create draft run from BOM; planned issues auto-filled
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunInput'
+  /production-runs/{id}:
+    get:
+      tags:
+      - Production
+      summary: Run detail with issues
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /production-runs/{id}/issues:
+    put:
+      tags:
+      - Production
+      summary: Set actual issues, wastage and output (draft only)
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunActuals'
+  /production-runs/{id}/post:
+    post:
+      tags:
+      - Production
+      summary: 'Post run: raw down, finished goods up'
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /production-runs/{id}/overheads:
+    post:
+      tags:
+      - Production
+      summary: Add labour, gas, power
+      x-roles:
+      - production
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+        '409':
+          $ref: '#/components/responses/E'
+        '422':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OverheadInput'
+  /production-runs/{id}/variance:
+    get:
+      tags:
+      - Production
+      summary: Planned vs actual with flags
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VarianceList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /production-runs/{id}/costing:
+    get:
+      tags:
+      - Production
+      summary: Cost per packet and margin
+      x-roles:
+      - production
+      - admin
+      - auditor
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Costing'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+  /dashboard:
+    get:
+      tags:
+      - Reports
+      summary: Role-specific summary cards
+      x-roles:
+      - admin
+      - production
+      - owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+  /reports/{name}:
+    get:
+      tags:
+      - Reports
+      summary: Report by date range; format json, csv, xlsx or pdf
+      x-roles:
+      - auditor
+      - owner
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - sales-register
+          - customer-sales
+          - product-sales
+          - gst-summary
+          - purchase-register
+          - stock-summary
+          - stock-ledger
+          - production-variance
+          - collections
+          - receivable-ageing
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Format'
+  /audit-log:
+    get:
+      tags:
+      - Reports
+      summary: Edit trail by entity
+      x-roles:
+      - auditor
+      - owner
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditList'
+        '401':
+          $ref: '#/components/responses/E'
+        '403':
+          $ref: '#/components/responses/E'
